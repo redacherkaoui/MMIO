@@ -429,26 +429,7 @@ static void trace_apply_filters(tracefs_t *t,
             ok = 1;
         }
         if (!ok && dev_major >= 0 && dev_minor >= 0) {
-            snprintf(fb, sizeof(fb), "dev==%d,%d", dev_major, dev_minor);
-            (void)set_event_filter_event(t, "block", "block_rq_issue", fb);
-            (void)set_event_filter_event(t, "block", "block_rq_complete", fb);
-        }
-    }
-
-    wrs(p, "1");
-}
-
-/* ----- NEW: set trace options (abs time for funcgraph, proc names, tgid) ----- */
-static int set_trace_option(tracefs_t *t, const char *opt, int on) {
-    char p[512];
-    // preferred per-option file (modern kernels)
-    snprintf(p, sizeof(p), "%s/options/%s", t->root, opt);
-    if (wrs(p, on ? "1" : "0") == 0) return 0;
-    // fallback: legacy trace_options toggler
-    snprintf(p, sizeof(p), "%s/trace_options", t->root);
-    if (on)  return wrs(p, opt);
-    char noopt[128]; snprintf(noopt, sizeof(noopt), "no%s", opt);
-    return wrs(p, noopt);
+    
 }
 /* ----- end NEW ----- */
 
@@ -583,7 +564,7 @@ static void trace_end(tracefs_t *t, const char *outfile) {
         }
     }
 
-    // disable the specific events we enabled
+   
     if (t->scsi_start_on) enable_event(t, "scsi", "scsi_dispatch_cmd_start", 0);
     if (t->scsi_done_on)  enable_event(t, "scsi", "scsi_dispatch_cmd_done",  0);
     const char *vq_groups[] = { "virtio", "virtio_ring", NULL };
@@ -594,7 +575,7 @@ static void trace_end(tracefs_t *t, const char *outfile) {
     if (t->vq_notify_on)    enable_event_anygroup(t, vq_groups, "virtqueue_notify",         0);
     if (t->vq_get_on)       enable_event_anygroup(t, vq_groups, "virtqueue_get_buf",        0);
 
-    // uninstall uprobes if any
+    
     if (t->qemu_uprobes_added > 0) {
         char pe[512];
         snprintf(pe, sizeof(pe), "%s/events/sgio_qemu/vq_pop/enable", t->root); wrs(pe, "0");
@@ -615,7 +596,7 @@ static void trace_end(tracefs_t *t, const char *outfile) {
     wrs(p, t->tracing_was_on ? "1" : "0");
 }
 
-/* ---------- Trace summary (optional) ---------- */
+
 
 static void summarize_trace_file(const char *path) {
     FILE *f = fopen(path, "re");
@@ -626,19 +607,7 @@ static void summarize_trace_file(const char *path) {
     while (fgets(line, sizeof(line), f)) {
         if (strstr(line, "BEGIN SG_IO") ||
             strstr(line, "END SG_IO") ||
-            strstr(line, "scsi_dispatch_cmd_start") ||
-            strstr(line, "scsi_dispatch_cmd_done")  ||
-            strstr(line, "block_rq_issue")          ||
-            strstr(line, "block_rq_complete")       ||
-            strstr(line, "virtqueue_add")           ||
-            strstr(line, "virtqueue_add_sgs")       ||
-            strstr(line, "virtqueue_kick_prepare")  ||   // NEW
-            strstr(line, "virtqueue_kick")          ||
-            strstr(line, "virtqueue_notify")        ||   // NEW
-            strstr(line, "virtqueue_get_buf")       ||   // NEW
-            strstr(line, "sgio_qemu:vq_pop")        ||   // NEW
-            strstr(line, "sgio_qemu:vq_pop_ret")    ||   // NEW
-            strstr(line, "virtio_scsi_queuecommand") ) { // via function_graph
+            
             fputs(line, stdout);
             if (++shown > 50) { puts("... (truncated)"); break; }
         }
@@ -646,7 +615,7 @@ static void summarize_trace_file(const char *path) {
     fclose(f);
 }
 
-/* ---------- Correlate BEGIN/END SG_IO with SCSI + virtio path ---------- */
+
 
 static void keep_first(char *dst, size_t dstsz, const char *line) {
     if (dst[0] == '\0') {
@@ -654,10 +623,9 @@ static void keep_first(char *dst, size_t dstsz, const char *line) {
     }
 }
 
-/* parse absolute timestamp from function_graph lines when funcgraph-abstime=1 */
+
 static double parse_fg_abstime(const char *line) {
-    // expects lines like: " 3) 1234.567890 |  virtqueue_notify()"
-    // returns seconds; 0.0 if not found
+    
     int cpu;
     double ts;
     if (sscanf(line, " %d) %lf |", &cpu, &ts) == 2) return ts;
@@ -682,7 +650,7 @@ typedef struct {
     char end[4096];
     int  driver_tag;
     int  scheduler_tag;
-    /* timing */
+  
     double notify_ts, getbuf_ts;
 } flow_capture_t;
 
@@ -743,7 +711,7 @@ static void summarize_trace_correlated(const char *path) {
 
     puts("\n=== Correlated SG_IO → SCSI → virtqueue (windowed by BEGIN/END SG_IO) ===");
     while (fgets(line, sizeof(line), f)) {
-        /* Detect BEGIN SG_IO and grab its id (resilient to prefix formatting) */
+      
         if (!in) {
             char *b = strstr(line, "BEGIN SG_IO id=");
             if (b && sscanf(b, "BEGIN SG_IO id=%llu", &id_tmp) == 1) {
@@ -754,7 +722,7 @@ static void summarize_trace_correlated(const char *path) {
         }
         if (!in) continue;
 
-        /* Inside the SG_IO window: capture the first occurrence of each key stage */
+       
         if (strstr(line, "block_rq_issue"))            keep_first(fc.block_issue, sizeof(fc.block_issue), line);
         if (strstr(line, "scsi_dispatch_cmd_start"))   {
             keep_first(fc.scsi_start, sizeof(fc.scsi_start), line);
@@ -782,24 +750,24 @@ static void summarize_trace_correlated(const char *path) {
         if (strstr(line, "scsi_dispatch_cmd_done"))    keep_first(fc.scsi_done, sizeof(fc.scsi_done), line);
         if (strstr(line, "block_rq_complete"))         keep_first(fc.block_complete, sizeof(fc.block_complete), line);
 
-        /* Detect END SG_IO for the same id and print the correlated flow (resilient to prefixing) */
+    
         if (in) {
             char *e = strstr(line, "END SG_IO id=");
             if (e && sscanf(e, "END SG_IO id=%llu", &id_tmp) == 1 && id_tmp == cur_id) {
                 keep_first(fc.end, sizeof(fc.end), line);
                 print_flow_capture(cur_id, &fc);
                 in = false; cur_id = 0; flows++;
-                if (flows >= 5) break;  /* avoid dumping huge logs */
+                if (flows >= 5) break; 
             }
         }
     }
-    /* If file ended without END, still print what we captured */
+  
     if (in) print_flow_capture(cur_id, &fc);
 
     fclose(f);
 }
 
-/* ---------- build a basic CDB ---------- */
+
 
 static int build_cdb(int kind, int alloc_len, uint8_t *cdb, int *cdb_len, int *dxfer_dir, int *xfer_len) {
     memset(cdb, 0, 32);
@@ -818,11 +786,11 @@ static int build_cdb(int kind, int alloc_len, uint8_t *cdb, int *cdb_len, int *d
             *xfer_len = 8;
             return 0;
         case CMD_READCAP16: {
-            cdb[0] = 0x9e;           // SERVICE ACTION IN(16)
-            cdb[1] = 0x10;           // SA = READ CAPACITY(16)
-            // LBA [2..9] left as zero from memset
+            cdb[0] = 0x9e;          
+            cdb[1] = 0x10;          
+        
             uint32_t al = (uint32_t)((alloc_len > 0) ? alloc_len : 32);
-            // Allocation length (BE32) at bytes 10..13
+         
             cdb[10] = (al >> 24) & 0xff;
             cdb[11] = (al >> 16) & 0xff;
             cdb[12] = (al >>  8) & 0xff;
@@ -843,27 +811,27 @@ static int build_cdb(int kind, int alloc_len, uint8_t *cdb, int *cdb_len, int *d
     return -1;
 }
 
-/* ---------- CONFIG WRITER THREAD  ---------- */
+
 
 #ifndef VIRTIO_SCSI_CFG_CDB_SIZE_OFF
-// virtio-scsi config layout typically: ... sense_size @0x14, cdb_size @0x18
+
 #define VIRTIO_SCSI_CFG_CDB_SIZE_OFF 0x18
 #endif
 
 typedef struct {
-    const char *config_path;  // sysfs path to virtio device "config" file
-    tracefs_t  *tf;           // optional: for trace_mark()
-    int delay_us;             // delay before writing
-    unsigned long flips;      // number of flips
-    int flip_sleep_us;        // per-flip sleep (microseconds)
+    const char *config_path;  
+    tracefs_t  *tf;           
+    int delay_us;             
+    unsigned long flips;      
+    int flip_sleep_us;        
 } config_writer_args_t;
 
-/* ---------- SG_IO worker thread ---------- */
+
 typedef struct {
     const char *sg_dev;
-    int runtime_ms;     // how long to run the loop (ms)
+    int runtime_ms;    
     int thread_id;
-    int cmd_mix_count;  // number of consecutive SG_IOs to submit per iteration
+    int cmd_mix_count; 
 } sgio_worker_args_t;
 
 static void *sgio_worker(void *arg) {
@@ -885,7 +853,7 @@ static void *sgio_worker(void *arg) {
         long elapsed_ms = (now.tv_sec - start.tv_sec) * 1000 + (now.tv_nsec - start.tv_nsec) / 1000000;
         if (elapsed_ms >= a->runtime_ms) break;
 
-        /* Submit a small sequence of varied commands */
+        
         for (int k = 0; k < a->cmd_mix_count; ++k) {
             int kind = (k % 4 == 0) ? CMD_TUR : (k % 4 == 1) ? CMD_INQUIRY : (k % 4 == 2) ? CMD_READCAP10 : CMD_READCAP16;
             int alloc = (kind == CMD_INQUIRY) ? 96 : (kind == CMD_READCAP16) ? 32 : 0;
@@ -898,7 +866,7 @@ static void *sgio_worker(void *arg) {
             hdr.sbp = sensebuf; hdr.mx_sb_len = sizeof(sensebuf); hdr.timeout = 5000;
 
             int rc = ioctl(fd, SG_IO, &hdr);
-            (void)rc; // ignore result; workers are best-effort
+            (void)rc; 
         }
     }
 
@@ -906,15 +874,15 @@ static void *sgio_worker(void *arg) {
     return NULL;
 }
 
-/* Synchronization to trigger config write during SG_IO */
+
 static pthread_mutex_t cfg_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  cfg_cond  = PTHREAD_COND_INITIALIZER;
 static int cfg_should_start = 0;
 
-/* Implementation that accepts args and does pwrite with offset */
+
 static void* config_writer_impl(void* arg) {
     config_writer_args_t *a = (config_writer_args_t *)arg;
-    /* Wait for start signal */
+  
     pthread_mutex_lock(&cfg_mutex);
     while (!cfg_should_start) pthread_cond_wait(&cfg_cond, &cfg_mutex);
     pthread_mutex_unlock(&cfg_mutex);
@@ -923,7 +891,7 @@ static void* config_writer_impl(void* arg) {
     const off_t offset = (off_t)VIRTIO_SCSI_CFG_CDB_SIZE_OFF;
     const uint32_t vals[2] = { 32u, 128u };
 
-    /* Try sysfs 'config' first */
+  
     int fd = open(a->config_path, O_WRONLY | O_CLOEXEC);
     if (fd >= 0) {
         for (unsigned long i = 0; i < a->flips; ++i) {
@@ -946,34 +914,21 @@ static void* config_writer_impl(void* arg) {
         return NULL;
     }
 
-    /* Sysfs not available → MMIO (BAR) fallback */
+  
     char pci_dir[PATH_MAX];
-    /* Prefer to derive PCI dir from the SCSI device this program opened (global opts) */
+ 
     extern opts_t g_opts;
     const char *sgdev = g_opts.dev ? g_opts.dev : "/dev/sg1";
     if (sg_to_pci_dir(sgdev, pci_dir, sizeof(pci_dir)) != 0) {
-        /* If sg path resolution fails, try to derive from the provided config_path parent */
+    
         if (a->config_path && a->config_path[0]) {
-            /* e.g., /sys/bus/virtio/devices/virtio0/config -> /sys/bus/pci/devices/0000:00:04.0 */
+           
             char tmp[PATH_MAX]; strncpy(tmp, a->config_path, sizeof(tmp)-1); tmp[sizeof(tmp)-1] = '\0';
-            /* walk up parents looking for a pci device directory (contains ':' in its name) */
+         
             char *slash = strrchr(tmp, '/');
             while (slash) {
                 *slash = '\0';
-                struct stat st;
-                char cand[PATH_MAX]; snprintf(cand, sizeof(cand), "%s/config", tmp);
-                if (stat(cand, &st) == 0) { strncpy(pci_dir, tmp, sizeof(pci_dir)-1); pci_dir[sizeof(pci_dir)-1] = '\0'; break; }
-                slash = strrchr(tmp, '/');
-            }
-        }
-        if (pci_dir[0] == '\0') {
-            strncpy(pci_dir, "/sys/bus/pci/devices/0000:00:04.0", sizeof(pci_dir)-1);
-            pci_dir[sizeof(pci_dir)-1] = '\0';
-        }
-    }
-
-    /* If device is transitional (older virtio), prefer sysfs virtio config path rather than PCI capability pokes */
-    if (!is_modern_virtio(pci_dir)) {
+               
         if (a->tf && a->tf->available) trace_mark(a->tf, "VIRTIO: transitional device; attempting sysfs config write for %s", pci_dir);
         char vcfg[PATH_MAX];
         if (find_virtio_scsi_config_path(vcfg, sizeof(vcfg)) == 0) {
@@ -1008,7 +963,7 @@ static void* config_writer_impl(void* arg) {
     return NULL;
 }
 
-/* ---------- VIRTIO CONFIG DISCOVERY ---------- */
+
 
 static int find_virtio_scsi_config_path(char *config_path, size_t path_size) {
     // Try multiple possible paths for virtio-scsi config
@@ -1035,17 +990,16 @@ static int find_virtio_scsi_config_path(char *config_path, size_t path_size) {
     return -1;
 }
 
-/* Try to find a virtio-scsi config associated with a specific scsi host
-    e.g. /sys/class/scsi_host/host<host_no>/device/virtio* /config (virtio* entry under host device) */
+
 static int find_virtio_scsi_config_path_for_host(int host_no, char *config_path, size_t path_size) {
     if (host_no < 0) return -1;
     char base[PATH_MAX];
     snprintf(base, sizeof(base), "/sys/class/scsi_host/host%d/device", host_no);
-    /* Use realpath to handle symlinks and nested paths, then walk up parents to find virtio* (look for a 'config' file) */
+ 
     char resolved[PATH_MAX];
     if (!realpath(base, resolved)) return -1;
 
-    /* Walk up from resolved path to root, checking for virtio* entries in each parent */
+  
     char cur[PATH_MAX]; strncpy(cur, resolved, sizeof(cur)); cur[sizeof(cur)-1] = '\0';
     int found = -1;
     while (1) {
@@ -1069,7 +1023,7 @@ static int find_virtio_scsi_config_path_for_host(int host_no, char *config_path,
         closedir(d);
         if (found == 0) break;
 
-        /* move one level up */
+   
         char *slash = strrchr(cur, '/');
         if (!slash || slash == cur) break;
         *slash = '\0';
@@ -1077,8 +1031,7 @@ static int find_virtio_scsi_config_path_for_host(int host_no, char *config_path,
     return found;
 }
 
-/* Wrapper to match requested signature in patch:
-   Starts a thread routine with no args, discovers config path, then calls impl. */
+
 void* config_writer(void* arg) __attribute__((unused));
 void* config_writer(void* arg) {
     (void)arg;
@@ -1096,10 +1049,7 @@ void* config_writer(void* arg) {
     int fd = open(config_path, O_WRONLY);
     if (fd < 0) { perror("[CONFIG] open failed"); return NULL; }
 
-    /* NOTE: The user requested to use offsetof(struct VirtIOSCSIConfig, cdb_size).
-       That struct is kernel/device-side; we don't have its definition here. We
-       use a reasonable offset constant or assume offsetof == 0x18 in prior code.
-       The original code used VIRTIO_SCSI_CFG_CDB_SIZE_OFF (0x18). We'll reuse that. */
+   
 #ifndef VIRTIO_SCSI_CFG_CDB_SIZE_OFF
 #define VIRTIO_SCSI_CFG_CDB_SIZE_OFF 0x18
 #endif
@@ -1113,15 +1063,15 @@ void* config_writer(void* arg) {
     return NULL;
 }
 
-/* ---------- main ---------- */
+
 
 int main(int argc, char **argv) {
-    // Give the thread a clear name so it shows up in trace output
+ 
     prctl(PR_SET_NAME, "sgio", 0, 0, 0);
 
     opts_t opt;
     if (!parse_opts(argc, argv, &opt)) return 1;
-    g_opts = opt;  // make available to trace helpers (for uprobes)
+    g_opts = opt;  
 
     printf("Device: %s\n", opt.dev);
     printf("Command: %s\n", (opt.cmd==CMD_INQUIRY)?"INQUIRY":(opt.cmd==CMD_READCAP10)?"READCAP10":(opt.cmd==CMD_READCAP16)?"READCAP16":"TUR");
@@ -1134,14 +1084,14 @@ int main(int argc, char **argv) {
            opt.heap_dump ? "ON" : "off",
            dump_ctx_bytes);
 
-    // NEW: trace-only mode (attach trace + uprobes without issuing SG_IO)
+  
     if (opt.trace_only) {
         tracefs_t tf = (tracefs_t){0};
         if (!tracefs_locate(&tf)) {
             printf("[tracefs] not found; cannot run --trace-only\n");
             return 1;
         }
-        trace_begin(&tf, opt.use_funcgraph);   // will also add uprobes if --qemu-*
+        trace_begin(&tf, opt.use_funcgraph);  
         printf("[tracefs] --trace-only: capturing for %d second(s)...\n", opt.trace_only_sleep);
         sleep(opt.trace_only_sleep);
         trace_end(&tf, opt.trace_out);
@@ -1153,7 +1103,7 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    // open device
+ 
     int fd = open(opt.dev, O_RDWR | O_CLOEXEC);
     if (fd < 0) {
         printf("❌ Failed to open %s: errno=%d (%s)\n", opt.dev, errno, strerror(errno));
@@ -1161,7 +1111,7 @@ int main(int argc, char **argv) {
     }
     printf("✅ Opened %s (fd=%d)\n", opt.dev, fd);
 
-    // Identify SCSI mapping (H:C:T:L)
+ 
     struct sg_scsi_id sid;
     memset(&sid, 0, sizeof(sid));
     if (ioctl(fd, SG_GET_SCSI_ID, &sid) == 0) {
@@ -1172,7 +1122,7 @@ int main(int argc, char **argv) {
         printf("⚠ ioctl(SG_GET_SCSI_ID) failed: errno=%d (%s)\n", errno, strerror(errno));
     }
 
-    // Discover backing block device for /dev/sgX (e.g., sda) for block-layer tracing
+  
     char disk[64] = {0}, devnode[128] = {0};
     int dev_major = -1, dev_minor = -1;
     if (discover_block_disk_from_sg(opt.dev, disk, sizeof(disk), devnode, sizeof(devnode),
@@ -1186,7 +1136,7 @@ int main(int argc, char **argv) {
         printf("Block backing: (not found via sysfs for %s)\n", opt.dev);
     }
 
-    // confirm SG device and log version
+ 
     int ver = 0;
     if (ioctl(fd, SG_GET_VERSION_NUM, &ver) == 0) {
         printf("SG driver version: %d.%d.%d\n", ver/10000, (ver/100)%100, ver%100);
@@ -1194,13 +1144,13 @@ int main(int argc, char **argv) {
         printf("⚠ ioctl(SG_GET_VERSION_NUM) failed: errno=%d (%s)\n", errno, strerror(errno));
     }
 
-    // build CDB & buffers
+ 
     uint8_t cdb[32]; int cdb_len=0, dxfer_dir=SG_DXFER_NONE, xfer_len=0;
     if (build_cdb(opt.cmd, opt.alloc_len, cdb, &cdb_len, &dxfer_dir, &xfer_len) != 0) {
         fprintf(stderr, "Failed to build CDB\n"); close(fd); return 1;
     }
 
-    // ---- allocate data and sense buffers ----
+  
     uint8_t *data = NULL, *sense = NULL;
     if (xfer_len > 0) {
         data = (uint8_t*)calloc(1, xfer_len);
@@ -1211,7 +1161,7 @@ int main(int argc, char **argv) {
         if (!sense) { perror("calloc sense"); free(data); close(fd); return 1; }
     }
 
-    // Optional heap layout analysis
+   
     if (opt.heap_log) {
         if (data) { log_buffer_addresses("data_buffer", data, xfer_len); log_heap_metadata(data); }
         if (sense) { log_buffer_addresses("sense_buffer", sense, opt.sense_len); log_heap_metadata(sense); }
@@ -1222,36 +1172,24 @@ int main(int argc, char **argv) {
         if (sense) dump_heap_around_buffer(sense, opt.sense_len);
     }
 
-    // ---------- CDB structure logging ----------
+   
     printf("\n=== CDB Structure ===\n");
     hexdump("CDB", cdb, cdb_len);
     printf("CDB length: %d (%s)\n", cdb_len, cdb_len_class(cdb_len));
     printf("CDB opcode: 0x%02x  interpreted as: %s\n", cdb[0], cdb_name(cdb, cdb_len));
 
-    printf("\n=== SG_IO Submission Details ===\n");
-    printf("Data buffer size: %d  Sense buffer size: %d\n", xfer_len, opt.sense_len);
-    printf("Direction: %s\n",
-           (dxfer_dir==SG_DXFER_FROM_DEV)?"SG_DXFER_FROM_DEV":
-           (dxfer_dir==SG_DXFER_TO_DEV)?"SG_DXFER_TO_DEV":
-           (dxfer_dir==SG_DXFER_NONE)?"SG_DXFER_NONE":"OTHER");
-
-    // tracefs start
-    tracefs_t tf = (tracefs_t){0};
-    uint64_t corr_id = 0;
-    if (opt.enable_trace) {
-        if (!tracefs_locate(&tf)) {
-            printf("[tracefs] not found; continuing without kernel trace\n");
+    printf("\n=== Sl trace\n");
         } else {
             trace_begin(&tf, opt.use_funcgraph);
-            // Narrow events to *this* SCSI device + backing block device
+         
             trace_apply_filters(&tf, &sid, disk, dev_major, dev_minor);
 
-            // Correlation id for this SG_IO (pid ^ tid ^ monotonic_ns low bits)
+        
             struct timespec _t0; clock_gettime(CLOCK_MONOTONIC_RAW, &_t0);
             uint64_t mono_ns0 = (uint64_t)_t0.tv_sec * 1000000000ull + (uint64_t)_t0.tv_nsec;
             corr_id = ((uint64_t)getpid() << 32) ^ (uint64_t)my_gettid() ^ mono_ns0;
 
-            // Pretty CDB hex
+           
             char cdb_hex[(32 * 3) + 1]; bytes_to_hex(cdb, cdb_len, cdb_hex, sizeof(cdb_hex));
 
             trace_mark(&tf,
@@ -1264,12 +1202,12 @@ int main(int argc, char **argv) {
         }
     }
 
-    /* ---------- Discover config path and launch CONFIG writer thread ---------- */
+  
     pthread_t config_thread;
 
     char discovered_cfg[PATH_MAX];
     int found = -1;
-    /* Prefer explicit CLI-provided path if given */
+ 
     if (opt.virtio_cfg) {
         struct stat st;
         if (stat(opt.virtio_cfg, &st) == 0) {
@@ -1281,7 +1219,7 @@ int main(int argc, char **argv) {
             fprintf(stderr, "[CONFIG] --virtio-config provided but not accessible: %s\n", opt.virtio_cfg);
         }
     }
-    /* Prefer host-specific discovery if SG host is available and no explicit path */
+    
     if (found != 0) {
         found = find_virtio_scsi_config_path_for_host(sid.host_no, discovered_cfg, sizeof(discovered_cfg));
         if (found == 0) {
@@ -1290,45 +1228,45 @@ int main(int argc, char **argv) {
             printf("[CONFIG] Discovered virtio config (generic): %s\n", discovered_cfg);
             found = 0;
         } else {
-            /* fallback per user instruction */
+           
             snprintf(discovered_cfg, sizeof(discovered_cfg), "/sys/bus/virtio/devices/virtio0/config");
             printf("[CONFIG] Discovery failed; falling back to %s\n", discovered_cfg);
             found = 0;
         }
     }
 
-    /* prepare args on the stack; they remain valid until we pthread_join below */
+ 
     config_writer_args_t cfg_args;
     cfg_args.config_path = discovered_cfg;
     cfg_args.tf = (opt.enable_trace && tf.available) ? &tf : NULL;
-    cfg_args.delay_us = 0; /* tight toggling; alignment sleep disabled by default */
+    cfg_args.delay_us = 0; 
     cfg_args.flips = opt.flips;
     cfg_args.flip_sleep_us = opt.flip_sleep_us;
 
     int config_thread_ok = (pthread_create(&config_thread, NULL, config_writer_impl, &cfg_args) == 0);
 
-    /* Spawn SG_IO worker threads that will hammer the device for ~1.5s */
-    const int worker_count = 4; /* can be 4-8 per request */
+   
+    const int worker_count = 4; 
     pthread_t workers[8];
     sgio_worker_args_t wargs[8];
-    int worker_runtime_ms = 1500; // run workers for 1.5s
+    int worker_runtime_ms = 1500; 
 
     for (int i = 0; i < worker_count; ++i) {
         wargs[i].sg_dev = opt.dev;
         wargs[i].runtime_ms = worker_runtime_ms;
         wargs[i].thread_id = i;
-        wargs[i].cmd_mix_count = 8; /* submit a small burst each loop */
+        wargs[i].cmd_mix_count = 8; 
         if (pthread_create(&workers[i], NULL, sgio_worker, &wargs[i]) != 0) {
             fprintf(stderr, "[MAIN] failed to create worker %d\n", i);
         }
     }
 
-    // timing
+  
     struct timespec ts0, ts1, rt0, rt1;
     clock_gettime(CLOCK_REALTIME, &rt0);
     clock_gettime(CLOCK_MONOTONIC_RAW, &ts0);
 
-    /* Signal config writer to start the config write now (so it overlaps SG_IO) */
+   
     if (config_thread_ok) {
         pthread_mutex_lock(&cfg_mutex);
         cfg_should_start = 1;
@@ -1336,7 +1274,7 @@ int main(int argc, char **argv) {
         pthread_mutex_unlock(&cfg_mutex);
     }
 
-    // issue SG_IO (single primary ioctl while workers run)
+    
     sg_io_hdr_t hdr; memset(&hdr, 0, sizeof(hdr));
     hdr.interface_id = 'S';
     hdr.dxfer_direction = dxfer_dir;
@@ -1345,7 +1283,7 @@ int main(int argc, char **argv) {
     hdr.sbp = sense; hdr.mx_sb_len = opt.sense_len;
     hdr.timeout = 20000; // ms
 
-    errno = 0;                     // clear errno to avoid stale values
+    errno = 0;                    
     int rc = ioctl(fd, SG_IO, &hdr);
     int saved_errno = errno;
 
@@ -1354,17 +1292,16 @@ int main(int argc, char **argv) {
     double dur_ms = (ts1.tv_sec - ts0.tv_sec)*1000.0 + (ts1.tv_nsec - ts0.tv_nsec)/1e6;
     double dur_us = (ts1.tv_sec - ts0.tv_sec)*1e6 + (ts1.tv_nsec - ts0.tv_nsec)/1e3;
 
-    /* 🎯 Report the precise SG_IO window to compare against CONFIG write */
     printf("[TIMING] SG_IO window: %ld.%09ld → %ld.%09ld\n",
            (long)ts0.tv_sec, ts0.tv_nsec, (long)ts1.tv_sec, ts1.tv_nsec);
 
-    /* Join config writer thread (per patch) */
+  
     if (config_thread_ok) {
         pthread_join(config_thread, NULL);
         printf("[CONFIG] Config writer thread joined\n");
     }
 
-    /* Join worker threads */
+  
     for (int i = 0; i < worker_count; ++i) pthread_join(workers[i], NULL);
     printf("[WORKERS] Joined %d workers\n", worker_count);
 
@@ -1375,7 +1312,7 @@ int main(int argc, char **argv) {
             "END SG_IO id=%llu rc=%d errno=%d status=0x%02x host=0x%02x driver=0x%02x "
             "masked=0x%02x info=0x%08x resid=%d dur_us=%.0f t_mono_ns=%llu",
             (unsigned long long)corr_id,
-            rc, (rc < 0 ? saved_errno : 0),            // only report errno if rc<0
+            rc, (rc < 0 ? saved_errno : 0),           
             hdr.status, hdr.host_status,
             hdr.driver_status, hdr.masked_status, hdr.info, hdr.resid,
             dur_us, (unsigned long long)mono_ns1);
@@ -1390,7 +1327,7 @@ int main(int argc, char **argv) {
            (long)rt0.tv_sec, rt0.tv_nsec, (long)rt1.tv_sec, rt1.tv_nsec);
     printf("Duration: %.3f ms (%.0f us)\n", dur_ms, dur_us);
 
-    // ---- SG_IO result ----
+ 
     printf("\n=== SG_IO Result ===\n");
     printf("ioctl rc=%d", rc);
     if (rc < 0) printf(" errno=%d (%s)\n", saved_errno, strerror(saved_errno));
@@ -1398,14 +1335,14 @@ int main(int argc, char **argv) {
     printf("status=0x%02x  host_status=0x%02x  driver_status=0x%02x  masked_status=0x%02x  info=0x%08x resid=%d\n",
            hdr.status, hdr.host_status, hdr.driver_status, hdr.masked_status, hdr.info, hdr.resid);
 
-    // Data / Sense
+   
     if (hdr.sb_len_wr > 0 && sense) hexdump("Sense data", sense, hdr.sb_len_wr);
     if (xfer_len > 0 && data) {
         size_t dump = (xfer_len < 256 ? xfer_len : 256);
         hexdump("Data buffer (first 256B)", data, dump);
         scan_patterns(data, xfer_len);
 
-        // Interpret well-known responses
+       
         if (opt.cmd == CMD_READCAP16)      decode_readcap16(data, xfer_len);
         else if (opt.cmd == CMD_READCAP10) decode_readcap10(data, xfer_len);
         else if (opt.cmd == CMD_INQUIRY)   decode_inquiry(data, xfer_len);
@@ -1416,12 +1353,12 @@ int main(int argc, char **argv) {
     return (rc == 0) ? 0 : 2;
 }
 
-/* ---------- VIRTIO DEVICE BAR ACCESS ---------- */
+
 
 typedef struct {
     void *bar_base;
     size_t bar_size;
-    uint32_t *cdb_size_reg;  // pointer to cdb_size field in config space
+    uint32_t *cdb_size_reg;  
 } virtio_device_t;
 
 static int map_virtio_device_bar(const char *sgdev, virtio_device_t *vdev) __attribute__((unused));
@@ -1435,7 +1372,7 @@ static int map_virtio_device_bar(const char *sgdev, virtio_device_t *vdev) {
     int fd = open(pci_path, O_RDWR);
     if (fd < 0) return -1;
     
-    // Map the virtio config BAR (typically BAR0, first 4KB)
+  
     vdev->bar_size = 4096;
     vdev->bar_base = mmap(NULL, vdev->bar_size, PROT_READ|PROT_WRITE, 
                           MAP_SHARED, fd, 0);
@@ -1443,7 +1380,7 @@ static int map_virtio_device_bar(const char *sgdev, virtio_device_t *vdev) {
     
     if (vdev->bar_base == MAP_FAILED) return -1;
     
-    // Point to cdb_size field (offset 0x18 in virtio-scsi config)
+ 
     vdev->cdb_size_reg = (uint32_t*)((char*)vdev->bar_base + 0x18);
     return 0;
 }
@@ -1456,10 +1393,7 @@ static void unmap_virtio_device_bar(virtio_device_t *vdev) {
     }
 }
 
-/* ---------- PCI/MMIO fallback helpers ---------- */
 
-/* sgdev -> /sys/bus/pci/devices/<BDF> resolution. Attempts to follow the sysfs links.
-   e.g., /dev/sg1 -> /sys/class/scsi_generic/sg1/device -> ../../../0000:00:04.0 */
 static int sg_to_pci_dir(const char *sgdev, char *out, size_t outsz) {
     if (!sgdev || !out) return -1;
     const char *base = strrchr(sgdev, '/'); base = base ? base + 1 : sgdev;
@@ -1468,13 +1402,13 @@ static int sg_to_pci_dir(const char *sgdev, char *out, size_t outsz) {
     snprintf(link, sizeof(link), "/sys/class/scsi_generic/%s/device", base);
     if (!realpath(link, cur)) return -1;
 
-    /* Walk up until we find a PCI function dir (has vendor+device files) */
+    
     for (;;) {
         char vendor[PATH_MAX], device[PATH_MAX];
         snprintf(vendor, sizeof(vendor), "%s/vendor", cur);
         snprintf(device, sizeof(device), "%s/device", cur);
         if (!access(vendor, R_OK) && !access(device, R_OK)) {
-            /* Extra sanity: ensure it's a PCI device (subsystem symlink ends with /pci) */
+          
             char subs[PATH_MAX], tgt[PATH_MAX];
             snprintf(subs, sizeof(subs), "%s/subsystem", cur);
             ssize_t n = readlink(subs, tgt, sizeof(tgt)-1);
@@ -1491,7 +1425,7 @@ static int sg_to_pci_dir(const char *sgdev, char *out, size_t outsz) {
     return -1;
 }
 
-/* Detect modern vs transitional virtio device by reading vendor/device IDs from sysfs */
+
 static int is_modern_virtio(const char *pci_dir) {
     char p[PATH_MAX]; unsigned vid = 0, did = 0; FILE *f;
     snprintf(p, sizeof(p), "%s/vendor", pci_dir);
@@ -1502,8 +1436,7 @@ static int is_modern_virtio(const char *pci_dir) {
     return (vid == 0x1af4 && did >= 0x1040); /* treat >=0x1040 as modern */
 }
 
-/* Parse the PCI configuration space 'config' file to find vendor-specific virtio capability
-   Returns 0 and fills hdr when found, non-zero otherwise. */
+
 static int find_virtio_device_cfg(const char *pci_dir, struct virtio_pci_cap_hdr *hdr) {
     if (!pci_dir || !hdr) return -1;
     char cfg_path[PATH_MAX]; snprintf(cfg_path, sizeof(cfg_path), "%s/config", pci_dir);
@@ -1513,7 +1446,7 @@ static int find_virtio_device_cfg(const char *pci_dir, struct virtio_pci_cap_hdr
     uint8_t buf[256]; ssize_t n = read(fd, buf, sizeof(buf)); close(fd);
     if (n < 0x40) return -1; /* need header + capability pointer */
 
-    /* check Status register bit for Capabilities List (bit 4) at offset 0x06 */
+  
     uint16_t status = (uint16_t)buf[0x06] | ((uint16_t)buf[0x07] << 8);
     if (!(status & 0x10)) return -1;
 
@@ -1525,8 +1458,7 @@ static int find_virtio_device_cfg(const char *pci_dir, struct virtio_pci_cap_hdr
     }
     fprintf(stderr, "\n[DEBUG] start cap_ptr=0x%02x\n", ptr);
 
-    /* Walk capabilities with proper bounds (avoid 8-bit n wraparound). Only treat
-       byte-2 as a length for vendor-specific caps. Use visited[] and hop limit */
+   
     size_t nbytes = (size_t)n;
     size_t iptr = (size_t)buf[0x34];
     uint8_t visited[256] = {0};
@@ -1570,8 +1502,7 @@ static int find_virtio_device_cfg(const char *pci_dir, struct virtio_pci_cap_hdr
     return -1;
 }
 
-/* Map appropriate BAR resourceN (based on hdr->bar) and flip the cdb_size field at
-   (hdr->offset + VIRTIO_SCSI_CFG_CDB_SIZE_OFF) for 'flips' times. */
+
 static int mmio_toggle_cdb_size_from_pci(const char *pci_dir, unsigned long flips, int flip_sleep_us, struct tracefs_t *tf) {
     if (!pci_dir) return -1;
 
@@ -1581,7 +1512,7 @@ static int mmio_toggle_cdb_size_from_pci(const char *pci_dir, unsigned long flip
         return -1;
     }
 
-    /* convert LE fields to host order */
+    
     uint32_t dev_off_raw = vhdr.offset;
     uint32_t dev_len_raw = vhdr.length;
     uint32_t dev_off = le32toh(vhdr.offset);
@@ -1624,7 +1555,7 @@ static int mmio_toggle_cdb_size_from_pci(const char *pci_dir, unsigned long flip
         uint32_t v_le = htole32(v_native);
         *cdbp = v_le; __sync_synchronize();
 
-        /* read-back to confirm the device sees the intended native value */
+       
         uint32_t rb_le = *cdbp;
         uint32_t rb_native = le32toh(rb_le);
         if (rb_native != v_native) {
@@ -1644,6 +1575,4 @@ static int mmio_toggle_cdb_size_from_pci(const char *pci_dir, unsigned long flip
     return 0;
 }
 
-/* ---------- CONFIG WRITER THREAD (RACE) ---------- */
 
-/* old BAR poke writer intentionally removed in favor of safe sysfs pwrite toggler */
